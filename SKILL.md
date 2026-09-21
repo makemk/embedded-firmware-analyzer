@@ -181,7 +181,7 @@ python scripts/float_bloat_analyzer.py --workspace "<workspace_dir>" --changed-f
 
 #### 10. 光模块 CMIS / MSA 协议专属审查 (`cmis_protocol_analyzer.py`)
 ```bash
-# Auto-generate child profile for new optical transceiver project
+# Auto-generate child profile by AI reading codebase (zero manual configuration required)
 python scripts/cmis_protocol_analyzer.py --workspace "<workspace_dir>" --profile
 
 # Incremental CMIS audit (flags missing Big-Endian SwapU16 on DDM fields & I2C ISR blocking operations)

@@ -42,7 +42,7 @@ sequenceDiagram
     Developer->>Agent: "帮我审查当前光模块工程代码" 或 "修改了 bsp_msa.c，检查合规性"
     Note over Agent: 识别触发意图，自动加载并激活 embedded-firmware-analyzer 技能
     Agent->>Skill: 调度 cmis_protocol_analyzer.py --changed-files bsp_msa.c
-    Skill->>Codebase: 自动嗅探子类画像 (cmis_project_profile.json)，执行 17 大 CMIS 门禁
+    Skill->>Codebase: AI 自动阅读工程代码生成子类画像 (cmis_project_profile.json)，执行 17 大 CMIS 门禁
     Skill-->>Agent: 输出 report_cmis.md (人类阅读) + report_cmis.json (AI 结构化指令)
     alt 门禁通过 (PASSED)
         Agent->>Developer: 汇报通过决断书，老代码债务自动静默，零误报通过
@@ -68,22 +68,32 @@ flowchart TD
     end
 
     subgraph Child["📂 子类工程自适应画像 (Child Project Profile)"]
-        C1["目标固件源码库<br>(如 ADuCM430_QSFP / STM32 / TI)"] -->|"--profile 智能拓扑嗅探"| C2["cmis_project_profile.json<br>• 自动识别 DDM 结构体指针<br>• 自动绑定 I2C 从机/读清 ISR<br>• 自动绑定口令变量与安全宏"]
+        C1["目标固件源码库<br>(如 ADuCM430_QSFP / STM32 / TI)"] -->|"🤖 AI 通读工程源码后自动生成<br>(--profile 语义拓扑感知)"| C2["cmis_project_profile.json<br>• 自动识别 DDM 结构体指针<br>• 自动绑定 I2C 从机/读清 ISR<br>• 自动绑定口令变量与安全宏"]
     end
 
     subgraph Engine["⚙️ 质检与闭环自愈引擎 (AI Tools)"]
         P1 & C2 --> E1["cmis_protocol_analyzer.py<br>(CMIS 协议全域审查引擎)"]
-        E1 --> GATE["embedded_ocr_gate.py<br>(全域质量门禁总决断)"]
         GATE --> R_MD["reports/report_cmis.md<br>(人类直观决断书)"]
         GATE --> R_JSON["reports/report_cmis.json<br>(AI 机器自愈指令清单)"]
         R_JSON --> HEAL["embedded_ocr_heal.py<br>(一键闭环自愈补丁器)"]
+        E1 --> GATE["embedded_ocr_gate.py<br>(全域质量门禁总决断)"]
     end
 ```
 
 1. **父类行业标准库 ([`rules/cmis_spec_rules.json`](rules/cmis_spec_rules.json))**：
    固化 CMIS、SFF、IEEE 国际组织发布的绝对物理时序公理与硬件安全定义。
-2. **子类自适应画像 (`<workspace>/cmis_project_profile.json`)**：
-   针对任何光模块厂商的代码工程（ADI ADuCM4x0、ST、Silicon Labs、TI 等），通过 AST 与正则分析自动提取项目的结构体指针（如 `psDDMTab`）、中断名称（如 `bsp_i2cs_rx`）、口令变量（`Psw_Mod`）与大端宏（`SwapU16`），**无需人工配置**。
+2. **子类自适应工程画像 (`<workspace>/cmis_project_profile.json`)**：
+   > 💡 **特别说明（避免歧义）**：
+   > **本子类配置文件是由 AI 编程助手（或分析器 `--profile` 引擎）在阅读目标固件工程源码后全自动分析生成的，开发者完全不需要手动编写或维护！**
+   >
+   > - **为什么需要子类画像？** 不同厂商/芯片平台的光模块固件（如 ADI ADuCM4x0、ST STM32、Silicon Labs、TI 乃至芯片原厂自研 MCU），其符号命名风格、外设驱动组织与全局状态变量各不相同。
+   > - **AI 是如何生成的？** AI 助手接入工程后，自动通读 C 源码与头文件，通过 AST 语义分析与拓扑嗅探，自主生成该工程的专属配置文件：
+   >   - 自动识别遥测结构体指针（如 `psDDMTab`、`psTab80`）
+   >   - 自动绑定 I2C 从机与读清中断服务函数（如 `bsp_i2cs_rx`、`UpdtIntL`）
+   >   - 自动提取特权口令变量与解锁魔数（如 `Psw_Mod`、`PSW_MOD_BOOT`）
+   >   - 自动识别大小端翻转宏（如 `SwapU16`、`bsp_swap_u16`）
+   >   - 自动锁定总线忙等待与隔离函数（如 `wait_i2c_busy`、`mcu_i2cs_en`）
+   > - **零配置适配**：生成子类画像后，父类 17 大 CMIS 行业通用公理即可精准落地到该固件工程中，实现**零人工配置、零误报**的代码门禁审查。
 
 ---
 
@@ -201,7 +211,7 @@ git clone https://github.com/makemk/embedded-firmware-analyzer.git
 # 1. 增量审查（推荐）：仅审查当前修改的文件，自动静默老代码历史债务
 & .venv\Scripts\python.exe scripts\cmis_protocol_analyzer.py --workspace "<工程目录>" --changed-files "bsp_msa.c"
 
-# 2. 强制重新生成/更新当前工程的 Profile 符号绑定
+# 2. AI 自动阅读工程源码并生成/更新子类画像 Profile（开发者无需手写）：
 & .venv\Scripts\python.exe scripts\cmis_protocol_analyzer.py --workspace "<工程目录>" --profile
 
 # 3. 运行全域统一门禁批处理（返回 0 代表通过，1 代表阻断）

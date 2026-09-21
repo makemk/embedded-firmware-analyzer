@@ -40,12 +40,22 @@
 
 本规则系统采用 **父子分层配置架构 (Parent-Child Decoupled Configuration)**：
 1. **父类不可变行业知识库 ([`rules/cmis_spec_rules.json`](rules/cmis_spec_rules.json))**：固化 CMIS、SFF、IEEE 国际组织发布的绝对物理与时序公理。
-2. **子类自适应工程画像 (`<workspace>/cmis_project_profile.json`)**：针对任意厂商 MCU（如 ADI ADuCM4x0、ST STM32、Silicon Labs、TI）动态自动推导指针结构、函数名、宏定义与寄存器映射。
+2. **子类自适应工程画像 (`<workspace>/cmis_project_profile.json`)**：
+   > 💡 **特别说明（避免歧义）**：  
+   > **本子类配置文件是由 AI 编程助手（或分析器 `--profile` 引擎）在阅读目标固件工程源码后全自动分析生成的，开发者完全不需要手动编写或维护！**  
+   > 针对任意厂商 MCU（如 ADI ADuCM4x0、ST STM32、Silicon Labs、TI 乃至私有芯片架构），AI 助手接入工程后，通过 AST 语义分析与控制流拓扑嗅探，自动提取项目的关键符号映射：
+   > - 自动识别遥测结构体指针（如 `psDDMTab`、`psTab80`）
+   > - 自动绑定 I2C 从机与读清中断服务函数（如 `bsp_i2cs_rx`、`UpdtIntL`）
+   > - 自动提取特权口令变量与解锁魔数（如 `Psw_Mod`、`PSW_MOD_BOOT`）
+   > - 自动识别 16 位大小端翻转宏（如 `SwapU16`、`bsp_swap_u16`）
+   > - 自动锁定总线忙状态与外设隔离函数（如 `wait_i2c_busy`、`mcu_i2cs_en`）  
+   >
+   > 生成该子类工程画像后，父类 17 大行业通用公理即可精准落地到目标工程，实现零人工配置、零误报的自动化质量门禁。
 
 ```mermaid
 flowchart TD
     SPEC["🏛️ 父类行业标准规则库<br>(cmis_spec_rules.json)"] --> ANALYZER["⚙️ CMIS 协议分析引擎<br>(cmis_protocol_analyzer.py)"]
-    PROJ["📂 用户量产源码工程<br>(ADuCM430_QSFP / Any CMIS FW)"] -->|"--profile 智能拓扑嗅探"| PROFILE["📄 子类工程自适应画像<br>(cmis_project_profile.json)"]
+    PROJ["📂 用户量产源码工程<br>(ADuCM430_QSFP / Any CMIS FW)"] -->|"🤖 AI 通读工程源码后自动生成<br>(--profile 语义拓扑感知)"| PROFILE["📄 子类工程自适应画像<br>(cmis_project_profile.json)"]
     PROFILE --> ANALYZER
     ANALYZER --> VERDICT{"⚖️ 门禁断言判定"}
     VERDICT -->|0 Blockers| PASS["✅ PASSED (Exit Code 0)"]
