@@ -29,25 +29,29 @@ def find_cppcheck_binary(custom_path=None):
     if custom_path and os.path.isfile(custom_path):
         return custom_path
     
-    # 1. Prioritize isolated bundled tool inside skill directory (zero host dependency)
-    skill_root = Path(__file__).resolve().parent.parent
-    bundled_cppcheck = skill_root / "tools" / "cppcheck" / "cppcheck.exe"
-    if bundled_cppcheck.is_file():
-        return str(bundled_cppcheck)
+    # 1. On Windows: prioritize isolated bundled tool inside skill directory (zero host dependency)
+    if sys.platform == 'win32':
+        skill_root = Path(__file__).resolve().parent.parent
+        bundled_cppcheck = skill_root / "tools" / "cppcheck" / "cppcheck.exe"
+        if bundled_cppcheck.is_file():
+            return str(bundled_cppcheck)
     
+    # 2. Check system PATH (standard on Linux/macOS or if custom-installed on Windows)
     which_path = shutil.which("cppcheck")
     if which_path:
         return which_path
     
-    user_home = Path.home()
-    candidates = [
-        user_home / ".eide" / "tools" / "cppcheck" / "cppcheck.exe",
-        Path(r"C:\Program Files\Cppcheck\cppcheck.exe"),
-        Path(r"C:\Program Files (x86)\Cppcheck\cppcheck.exe"),
-    ]
-    for c in candidates:
-        if c.is_file():
-            return str(c)
+    # 3. Known default locations on Windows
+    if sys.platform == 'win32':
+        user_home = Path.home()
+        candidates = [
+            user_home / ".eide" / "tools" / "cppcheck" / "cppcheck.exe",
+            Path(r"C:\Program Files\Cppcheck\cppcheck.exe"),
+            Path(r"C:\Program Files (x86)\Cppcheck\cppcheck.exe"),
+        ]
+        for c in candidates:
+            if c.is_file():
+                return str(c)
     return None
 
 
@@ -106,6 +110,14 @@ def run_cppcheck(cppcheck_bin, project_path=None, src_dirs=None, scope=None):
         "--inline-suppr"
     ]
     
+    # 2. Automatically bind embedded MCU 32-bit platform (eliminates desktop windows.cfg dependency and false positives)
+    skill_root = Path(__file__).resolve().parent.parent
+    arm_platform = skill_root / "tools" / "cppcheck" / "platforms" / "arm32-wchar_t4.xml"
+    if arm_platform.is_file():
+        cmd.append(f"--platform={arm_platform}")
+    else:
+        cmd.append("--platform=arm32-wchar_t4")
+    
     if project_path and os.path.isfile(project_path):
         cmd.append(f"--project={project_path}")
     elif src_dirs:
@@ -128,16 +140,28 @@ def run_cppcheck(cppcheck_bin, project_path=None, src_dirs=None, scope=None):
     except Exception as e:
         return {"error": f"Failed to execute cppcheck: {str(e)}"}
         
-    if not xml_output or not xml_output.strip().startswith('<?xml'):
+    if not xml_output:
+        return {
+            "error": "Cppcheck produced empty output.",
+            "raw": "No output"
+        }
+        
+    # Robust XML slice: locate <?xml or <results to bypass any preceding warning/config text
+    xml_start = xml_output.find('<?xml')
+    if xml_start == -1:
+        xml_start = xml_output.find('<results')
+        
+    if xml_start == -1:
         return {
             "error": "Cppcheck did not produce XML output.",
             "raw": xml_output[:1000] if xml_output else "No output"
         }
         
+    clean_xml = xml_output[xml_start:]
     try:
-        root = ET.fromstring(xml_output)
+        root = ET.fromstring(clean_xml)
     except ET.ParseError as e:
-        return {"error": f"XML parse error: {str(e)}"}
+        return {"error": f"XML parse error: {str(e)}", "raw": clean_xml[:500]}
         
     critical_errors = []
     warnings = []
