@@ -1,0 +1,5 @@
+# Embedded Firmware Analyzer & OCR Quality Gate Dependencies
+pyelftools>=0.29
+mapfile-parser>=2.4.0
+lizard>=1.17.10
+

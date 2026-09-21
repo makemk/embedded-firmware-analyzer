@@ -1,0 +1,179 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "name": "CMIS Base Industry Specification",
+  "version": "1.0.0",
+  "description": "Universal rules and semantic ontology for Common Management Interface Specification (CMIS 3.0/4.0/5.x) and SFF-8636 optical transceivers.",
+  "telemetry_16bit": {
+    "semantic_fields": [
+      "temp", "temperature", "montemp", "temp_c",
+      "volt", "voltage", "monvolt", "vcc",
+      "bias", "monbias", "tx_bias", "laser_bias",
+      "tx_?pwr", "rx_?pwr", "tx_?po", "rx_?po", "montxpo", "monrxpo", "opt_pwr",
+      "aux[1-3]", "monaux[1-3]"
+    ],
+    "unit_definitions": {
+      "temperature": "1/256 degree Celsius (signed 16-bit)",
+      "voltage": "100 uV (unsigned 16-bit)",
+      "bias_current": "2 uA (unsigned 16-bit)",
+      "tx_rx_power": "0.1 uW (unsigned 16-bit)"
+    },
+    "required_byte_order": "Big-Endian (MSB First)",
+    "recognized_swap_signatures": [
+      "SwapU16", "SwapS16", "SwapU32", "SwapS32",
+      "__REV16", "__REV", "REV16",
+      "htons", "ntohs", "htonl", "ntohl",
+      "bswap16", "bswap32", "SWAP16"
+    ]
+  },
+  "memory_map": {
+    "lower_page": {
+      "start": 0,
+      "end": 127,
+      "readonly_ranges": [
+        {"start": 0, "end": 25, "desc": "Identifier, Status, Latched Flags, DDM Telemetry Monitors"}
+      ],
+      "page_select_byte": 127
+    },
+    "upper_pages": {
+      "page_size": 128,
+      "start": 128,
+      "end": 255,
+      "readonly_pages": [
+        {"page": "0x00", "desc": "Base Information / Factory EEPROM / Vendor ID"},
+        {"page": "0x02", "desc": "User EEPROM / Advertisements (unless vendor unlocked)"}
+      ]
+    }
+  },
+  "i2c_slave_timing": {
+    "max_clock_stretch_us": 500,
+    "forbidden_in_isr": [
+      "flash_write", "flash_erase", "spi_flash_download", "eeprom_write",
+      "delay", "sleep", "msleep", "usleep",
+      "printf", "sprintf", "malloc", "free"
+    ]
+  },
+  "clear_on_read_and_interrupt": {
+    "description": "CMIS 3.0/4.0/5.x and SFF-8636 Latched Flag registers, Clear-on-Read (COR) semantics, and Interrupt (IntL) handling.",
+    "latched_flag_registers": [
+      {"page": "0x00", "start": 8, "end": 13, "desc": "Module-Level Latched Alarms and Warnings (Temp, Vcc, Aux)"},
+      {"page": "0x11", "start": 134, "end": 153, "desc": "Lane-Level Latched Flags (Tx/Rx LOS, LOL, Fault, Bias AW, Tx/Rx Power AW)"},
+      {"page": "0x10", "start": 134, "end": 153, "desc": "Lane-Level Latched Flags (Datapath / Media flags)"},
+      {"page": "0x14", "start": 134, "end": 153, "desc": "Active Cable / VDM Latched Flags"}
+    ],
+    "mask_registers": [
+      {"page": "0x00", "start": 26, "end": 31, "desc": "Module-Level Interrupt Masks"},
+      {"page": "0x10", "start": 134, "end": 153, "desc": "Lane-Level Interrupt Masks"}
+    ],
+    "semantic_rules": {
+      "latch_operation": "bitwise_or",
+      "latch_forbidden_operator": "direct_assignment",
+      "cor_requires_intl_update": true,
+      "cor_timing_max_deassert_us": 200
+    }
+  },
+  "page00_and_readonly_guard": {
+    "description": "Page 00h factory EEPROM and Lower Page 0~25 protection and checksum integrity.",
+    "checksum_locations": [
+      {"page": "0x00", "byte": 222, "range": [128, 221], "desc": "Page 00h Checksum 1"},
+      {"page": "0x02", "byte": 255, "range": [128, 254], "desc": "Page 02h Checksum"}
+    ],
+    "unlocked_write_protection": {
+      "protected_buffers": ["SffT00", "psIDInfo"],
+      "requires_password_condition": true,
+      "rule": "Writes to Page 00h must be gated by vendor/user password unlock check (e.g. Psw_Mod > PSW_MOD_USR1)."
+    }
+  },
+  "paging_and_bounds": {
+    "description": "Lower Page byte 127 Page Select handling and Upper Page pointer dereference bounds defense.",
+    "page_select_byte": 127,
+    "valid_standard_pages": [0, 1, 2, 3, 4, 16, 17, 19, 20],
+    "vendor_page_min": 112,
+    "rules": {
+      "sanitize_invalid_page_to_zero": true,
+      "switch_must_have_default_branch": true
+    }
+  },
+  "laser_safety_and_tx_disable": {
+    "description": "Laser safety interlocks, Tx_Disable active-high polarity, and hardware fault fast squelch.",
+    "register_polarity": {
+      "disable_state": 1,
+      "enable_state": 0,
+      "desc": "CMIS Tx_Disable registers are Active-High (1 = Disabled/Off, 0 = Enabled/On)."
+    },
+    "fault_interlock_required": ["TxFltFlg", "TxLosFlg", "TxFrc"],
+    "rules": {
+      "squelch_max_latency_us": 100,
+      "fault_must_force_tx_disable": true,
+      "blocking_delays_forbidden_in_fault_squelch": true
+    }
+  },
+  "module_and_datapath_state_machine": {
+    "description": "Section 5 Module and Datapath state transitions and LowPwr dual-mode evaluation.",
+    "module_low_power_rule": {
+      "formula": "LowPwr = Hardware_Pin_LPMode | Software_Register_LowPwr",
+      "desc": "Low power mode must evaluate both the physical LPMode pin and the CMIS LowPwr software register."
+    },
+    "datapath_states": [
+      "Deactivated", "Init", "DeactInProgress", "Activated", "TxTurnOn", "TxTurnOff"
+    ],
+    "rules": {
+      "forbidden_jump_deactivated_to_activated": true
+    }
+  },
+  "cdb_firmware_upgrade": {
+    "description": "Command Data Block (CDB) execution state machine and status synchronicity.",
+    "status_registers": [37, 38],
+    "busy_bit_mask": "0x80",
+    "rules": {
+      "atomic_busy_assertion": true,
+      "blocking_flash_ops_forbidden_in_isr": true
+    }
+  },
+  "transceiver_production_robustness": {
+    "description": "Mass-production optical transceiver architectural robustness and hardware safety rules derived from field-proven transceivers.",
+    "i2c_busy_guard": {
+      "rule_id": "CMIS_I2C_BUSY_GUARD_REQUIRED",
+      "severity": "CRITICAL",
+      "description": "Shared MSA shadow register updates and interrupt assertions in background loop must be synchronized with wait_i2c_busy() to prevent torn reads.",
+      "guard_functions": ["wait_i2c_busy", "i2c_busy_wait", "i2c_wait_busy", "wait_i2c_free"],
+      "protected_targets": ["SffLow", "SffT11", "UpdtIntL"]
+    },
+    "flash_i2c_isolation": {
+      "rule_id": "EMBEDDED_FLASH_WRITE_I2C_ISOLATION",
+      "severity": "BLOCKER",
+      "description": "Flash sector erase and word programming must isolate/disable I2C slave peripheral to prevent fatal clock-stretching and bus lockups.",
+      "i2c_isolate_calls": ["mcu_i2cs_en", "NVIC_DisableIRQ", "I2C_Cmd", "__disable_irq"],
+      "flash_erase_write_ops": ["FlashSectorErase", "FlashWriteWords", "FlashWrite32", "mcu_flash_erase", "mcu_flash_program"]
+    },
+    "pid_output_clamping": {
+      "rule_id": "EMBEDDED_PID_OUTPUT_CLAMPING",
+      "severity": "CRITICAL",
+      "description": "Closed-loop TEC and bias PID algorithms must enforce both incremental step limiting (anti-windup) and DAC output saturation clamping.",
+      "step_limit_tokens": ["HMaxStep", "CMaxStep", "MaxStep", "StepLimit", "step_limit"],
+      "dac_limit_tokens": ["MaxDAC", "MinDAC", "DAC_MAX", "DAC_MIN", "dac_max"]
+    },
+    "calibration_saturation": {
+      "rule_id": "EMBEDDED_CALI_INTEGER_PROMOTION_AND_SATURATION",
+      "severity": "CRITICAL",
+      "description": "Fixed-point ADC slope calibration multiplication must promote 16-bit operands to 32-bit and clamp results to prevent sign inversion wrapping.",
+      "promotion_tokens": ["int32_t", "uint32_t", "long"],
+      "saturation_tokens": ["INT16_MAX", "INT16_MIN", "UINT16_MAX", "32767", "-32768", "65535"]
+    },
+    "lut_hysteresis": {
+      "rule_id": "EMBEDDED_LUT_MISSING_HYSTERESIS",
+      "severity": "WARNING",
+      "description": "Dynamic temperature lookup table (LUT) compensation must feature input clamping and hysteresis deadband filtering to prevent DAC hunting.",
+      "hysteresis_tokens": ["LUTIdx", "sLastTemp", "ABS", "abs", "wOld", "deadband"],
+      "blank_flash_guard": "0xFFFF"
+    },
+    "boot_jump_dual_lock": {
+      "rule_id": "EMBEDDED_BOOT_JUMP_SINGLE_LOCK_HAZARD",
+      "severity": "BLOCKER",
+      "description": "Bootloader / IAP execution jump must require dual independent interlocks (password state AND magic key) to prevent accidental link drops.",
+      "boot_jump_targets": ["bsp_boot_jump", "mcu_startboot", "jump_to_boot", "iap_jump", "enter_bootloader"],
+      "password_tokens": ["Psw_Mod", "PSW_MOD_BOOT", "PSW_MOD_VEN2", "password"],
+      "magic_tokens": ["BankSel", "0xFA", "0x55AA", "0xAA55", "magic", "MagicKey"]
+    }
+  }
+}
+
